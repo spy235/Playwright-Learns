@@ -1,6 +1,7 @@
 # Playwright 2.0 - Learning Notes & Revision Guide
 
-> A comprehensive reference for Playwright test automation concepts learned from this repository
+> A comprehensive reference for Playwright test automation concepts learned from this repository  
+> **Updated: June 2026** - Latest Playwright practices and features
 
 ---
 
@@ -24,40 +25,114 @@
 ```json
 {
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
-    "@types/node": "^25.9.1"
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.0.0"
   }
 }
 ```
 
 ### Configuration File (`playwright.config.ts`)
 ```typescript
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  timeout: 30 * 1000,           // 30 second timeout per test
+  fullyParallel: true,           // Run tests in parallel
+  forbidOnly: !!process.env.CI,  // Forbid .only in CI
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  
+  timeout: 30 * 1000,            // 30 second timeout per test
   expect: {
-    timeout: 30 * 10000,        // 30 second timeout for assertions
+    timeout: 5 * 1000,           // 5 second timeout for assertions
   },
-  reporter: "html",             // Generate HTML report
+  
+  reporter: [
+    ["html"],                    // Generate HTML report
+    ["junit", { outputFile: "test-results/junit.xml" }],
+  ],
+  
   use: {
-    browserName: "webkit",      // Browser to use
-    headless: false,            // Show browser window
+    headless: true,              // Run headless in CI
+    trace: "on-first-retry",     // Collect trace on first retry
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+  },
+  
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
+    },
+  ],
+  
+  webServer: {
+    command: "npm run start", // optional: start local server
+    url: "http://localhost:3000",
+    reuseExistingServer: !process.env.CI,
   },
 });
 ```
 
 ### Running Tests
 ```bash
-# Run tests with UI
+# Run all tests
+npx playwright test
+
+# Run tests with UI mode (visual debugging)
 npx playwright test --ui
 
 # Run specific test file
 npx playwright test tests/all_in_one_actions.spec.ts
 
-# Generate HTML report
+# Run tests matching pattern
+npx playwright test --grep @smoke
+
+# Run tests in specific browser
+npx playwright test --project=chromium
+
+# Debug mode (inspector)
+npx playwright test --debug
+
+# Generate and show HTML report
 npx playwright show-report
+
+# Run tests headed (see browser)
+npx playwright test --headed
+```
+
+### Modern Test Structure
+```typescript
+import { test, expect } from "@playwright/test";
+
+test.describe("Login Tests", () => {
+  let page;
+
+  test.beforeEach(async ({ page: testPage }) => {
+    page = testPage;
+    await page.goto("https://example.com");
+  });
+
+  test("should login successfully", async () => {
+    await page.fill("#email", "user@example.com");
+    await page.fill("#password", "password123");
+    await page.click("button[type='submit']");
+    
+    await expect(page).toHaveURL(/.*dashboard/);
+  });
+
+  test.afterEach(async () => {
+    // Cleanup if needed
+  });
+});
 ```
 
 ---
@@ -505,10 +580,331 @@ test("Hover button", async ({ page }) => {
 });
 ```
 
-**Key Points**:
-- Use `.hover()` to trigger hover state
-- Use `.waitFor({ state: "visible" })` to wait for dropdown
-- Iterate through dropdown items to find target
-- Click specific item when found
+---
+
+## Best Practices & Tips
+
+### 1. Use Modern Locator Strategies
+```typescript
+// ✅ GOOD - Built-in methods (more reliable)
+page.getByRole("button", { name: "Submit" });
+page.getByLabel("Email");
+page.getByPlaceholder("Enter email");
+page.getByText("Welcome");
+
+// ⚠️ AVOID - CSS/XPath (brittle, maintenance heavy)
+page.locator("div.btn-submit");
+page.locator("//button[@class='submit']");
+```
+
+### 2. Explicit Waits (Recommended)
+```typescript
+// ✅ GOOD - Wait for specific element state
+await page.locator("#result").waitFor({ state: "visible" });
+await expect(page.locator(".success")).toBeVisible();
+
+// ⚠️ AVOID - Hard sleeps
+await page.waitForTimeout(5000); // Don't do this!
+```
+
+### 3. Use Test Fixtures for Setup
+```typescript
+// ✅ GOOD - Reusable fixtures
+test.beforeEach(async ({ page }) => {
+  await page.goto("https://example.com");
+  await page.fill("#login", "user");
+  await page.fill("#password", "pass");
+  await page.click("button");
+});
+
+test("should perform action", async ({ page }) => {
+  // Already logged in
+  await page.click("#action-btn");
+});
+```
+
+### 4. Error Handling & Debugging
+```typescript
+// Use trace for debugging failures
+test("my test", async ({ page }) => {
+  await page.context().tracing.start({ screenshots: true, snapshots: true });
+  
+  // Test code here
+  
+  await page.context().tracing.stop({ path: "trace.zip" });
+});
+
+// Use videos for visual debugging
+// Configured in playwright.config.ts
+```
+
+### 5. Network & Response Handling
+```typescript
+// ✅ Mock API responses
+await page.route("**/api/users**", route => {
+  route.abort("blockedbyclient");
+});
+
+// ✅ Wait for network response
+const responsePromise = page.waitForResponse("**/api/data**");
+await page.click("button");
+const response = await responsePromise;
+expect(response.ok()).toBeTruthy();
+
+// ✅ Intercept and modify requests
+await page.route("**/api/**", route => {
+  const request = route.request();
+  route.continue({
+    headers: {
+      ...request.headers(),
+      "Authorization": "Bearer token",
+    },
+  });
+});
+```
+
+### 6. Accessibility Testing
+```typescript
+// ✅ Use role-based locators (accessible + stable)
+page.getByRole("button", { name: "Login" });
+page.getByRole("textbox", { name: "Username" });
+
+// ✅ Check accessibility
+const accessibilityScan = await page.locator("main").evaluate(
+  el => new (window as any).AxeCore(el).run()
+);
+```
+
+### 7. Test Organization
+```typescript
+// ✅ Group related tests
+test.describe("Shopping Cart", () => {
+  test("should add item to cart", async ({ page }) => {
+    // Test code
+  });
+
+  test("should remove item from cart", async ({ page }) => {
+    // Test code
+  });
+
+  test.describe("Checkout", () => {
+    test("should complete purchase", async ({ page }) => {
+      // Test code
+    });
+  });
+});
+
+// ✅ Tag tests for selective runs
+test("should login @smoke @critical", async ({ page }) => {
+  // Then run: npx playwright test --grep @smoke
+});
+```
+
+### 8. Performance Optimization
+```typescript
+// ✅ Run tests in parallel (default)
+// ✅ Use browserContext for isolation
+const context = await browser.newContext();
+const page = await context.newPage();
+
+// ✅ Reuse browser session when possible
+test.use({
+  navigationTimeout: 30000,
+  actionTimeout: 10000,
+});
+```
+
+---
+
+## Quick Reference Cheat Sheet
+
+### Common Commands
+```bash
+# Install
+npm install -D @playwright/test
+
+# Run all tests
+npx playwright test
+
+# UI Mode (recommended for development)
+npx playwright test --ui
+
+# Debug
+npx playwright test --debug
+
+# List tests
+npx playwright test --list
+
+# View report
+npx playwright show-report
+```
+
+### Essential Locator Methods
+```typescript
+// Finding elements
+page.locator("selector")                         // CSS/XPath
+page.getByRole("button")                         // By ARIA role
+page.getByLabel("label text")                    // By label
+page.getByPlaceholder("placeholder")             // By placeholder
+page.getByText("text")                           // By text content
+
+// Filtering & Navigation
+.first()                                         // First element
+.last()                                          // Last element
+.nth(0)                                          // Element at index
+.filter({ hasText: "text" })                     // Filter by content
+
+// Actions
+.click()                                         // Click element
+.fill("text")                                    // Fill input
+.type("text")                                    // Type gradually
+.press("Enter")                                  // Press key
+.check()                                         // Check checkbox/radio
+.uncheck()                                       // Uncheck
+.selectOption("value")                           // Select dropdown
+.hover()                                         // Hover over element
+.focus()                                         // Focus element
+.blur()                                          // Remove focus
+.clear()                                         // Clear input
+
+// Assertions
+.toBeVisible()                                   // Element visible
+.toBeHidden()                                    // Element hidden
+.toBeEnabled()                                   // Element enabled
+.toBeDisabled()                                  // Element disabled
+.toBeChecked()                                   // Checkbox checked
+.toHaveText("text")                              // Element has text
+.toHaveValue("value")                            // Input has value
+.toHaveAttribute("attr", "value")                // Has attribute
+.toContainText("text")                           // Contains text
+.toHaveURL("url")                                // Page URL matches
+.toHaveCount(5)                                  // Element count
+
+// Waiting
+.waitFor({ state: "visible" })                   // Wait for state
+.waitFor({ timeout: 5000 })                      // Custom timeout
+
+// Properties
+.textContent()                                   // Get text
+.getAttribute("attr")                            // Get attribute
+.inputValue()                                    // Get input value
+.count()                                         // Count elements
+```
+
+### Fixture Examples
+```typescript
+// Use built-in fixtures
+test("my test", async ({ page, context, browser }) => {
+  // page - single browser page
+  // context - isolated browser context
+  // browser - browser instance
+});
+
+// Create custom fixture
+const test = base.extend({
+  loginPage: async ({ page }, use) => {
+    await page.goto("/");
+    await page.fill("#email", "user@test.com");
+    await page.fill("#password", "password");
+    await page.click("button");
+    await use(page);
+  },
+});
+
+test("should perform action", async ({ loginPage }) => {
+  // Already logged in
+  await loginPage.click("#action");
+});
+```
+
+### Configuration Essentials
+```typescript
+// playwright.config.ts
+{
+  testDir: "./tests",              // Test directory
+  testMatch: "**/*.spec.ts",        // Test file pattern
+  timeout: 30000,                   // Global timeout (ms)
+  workers: 4,                       // Parallel workers
+  retries: 2,                       // Retry failed tests
+  reporter: "html",                 // HTML report
+  use: {
+    headless: true,                 // Run headless
+    screenshot: "only-on-failure",  // Screenshot on fail
+    video: "retain-on-failure",     // Video on fail
+    trace: "on-first-retry",        // Trace on retry
+  },
+}
+```
+
+### Key Differences from Selenium
+```typescript
+// Playwright is faster & more reliable
+// - Auto-wait for elements
+// - Network interception built-in
+// - Cross-browser (Chromium, Firefox, WebKit)
+// - Better DevTools integration
+// - Modern async/await API
+// - Built-in recording & tracing
+
+// No need for:
+// - WebDriverWait
+// - Sleep statements
+// - Thread.sleep()
+// - Complex waits
+```
+
+---
+
+## Debugging & Troubleshooting
+
+### Common Issues & Solutions
+
+**Issue: "Timeout waiting for selector"**
+```typescript
+// Solution: Use more reliable locators
+page.getByRole("button", { name: "Click me" })  // Better than .btn-class
+
+// Or increase timeout
+test("test name", async ({ page }) => {
+  page.setDefaultTimeout(60000);
+  // Your test
+});
+```
+
+**Issue: "Element not interactable"**
+```typescript
+// Solution: Ensure element is visible & enabled first
+await page.locator("button").waitFor({ state: "visible" });
+await page.locator("button").click();
+
+// Or scroll into view if needed
+await page.locator("button").scrollIntoViewIfNeeded();
+```
+
+**Issue: "Flaky/intermittent test failures"**
+```typescript
+// Solution: Use proper waits
+// ✅ GOOD
+await expect(page.locator(".success")).toBeVisible();
+
+// ❌ BAD
+await page.waitForTimeout(2000);
+await page.locator(".success").click();
+```
+
+### Debugging Tools
+```bash
+# Debug mode with inspector
+npx playwright test --debug
+
+# UI Mode (visual debugging - highly recommended)
+npx playwright test --ui
+
+# Check what locators work
+npx playwright codegen https://example.com  # Record actions
+
+# View test traces
+npx playwright show-trace trace.zip
+```
 
 ---
