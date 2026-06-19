@@ -908,3 +908,1003 @@ npx playwright show-trace trace.zip
 ```
 
 ---
+
+## API Testing & Network Interception
+
+### Intercepting API Responses
+
+**Concept**: Mock or monitor API calls without hitting real backend
+
+```typescript
+test("Intercept and mock API response", async ({ page }) => {
+  // Mock API endpoint
+  await page.route("**/api/users", route => {
+    route.abort("blockedbyclient");
+  });
+
+  // Or return custom response
+  await page.route("**/api/data", route => {
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: "mocked" }),
+    });
+  });
+
+  await page.goto("https://example.com");
+  // API calls are now intercepted
+});
+```
+
+### Waiting for API Responses
+
+```typescript
+test("Wait for API response", async ({ page }) => {
+  const responsePromise = page.waitForResponse("**/api/submit");
+  
+  await page.click("button"); // Triggers API call
+  const response = await responsePromise;
+  
+  expect(response.ok()).toBeTruthy();
+  const json = await response.json();
+  expect(json.status).toBe("success");
+});
+```
+
+### Modifying Request Headers
+
+```typescript
+test("Add authorization header to all requests", async ({ page }) => {
+  await page.route("**/*", route => {
+    route.continue({
+      headers: {
+        ...route.request().headers(),
+        "Authorization": "Bearer my-token-123",
+      },
+    });
+  });
+
+  await page.goto("https://api.example.com/data");
+});
+```
+
+---
+
+## Storage State & Session Management
+
+### Saving Browser State
+
+**Concept**: Persist login session, cookies, localStorage across tests
+
+```typescript
+// Save state after login
+test("Save authenticated session", async ({ page, context }) => {
+  await page.goto("https://example.com/login");
+  await page.fill("#email", "user@test.com");
+  await page.fill("#password", "password123");
+  await page.click("button[type='submit']");
+  
+  // Wait for navigation to confirm login
+  await page.waitForURL("**/dashboard");
+  
+  // Save state to file
+  await context.storageState({ path: "auth.json" });
+});
+```
+
+### Reusing Saved State in Other Tests
+
+```typescript
+// Use saved state in other tests
+test.use({ storageState: "auth.json" });
+
+test("should show dashboard (already logged in)", async ({ page }) => {
+  await page.goto("https://example.com");
+  // Already authenticated - no login needed!
+  await expect(page).toHaveURL("**/dashboard");
+});
+```
+
+### Configuration Level Storage State
+
+```typescript
+// In playwright.config.ts
+export default defineConfig({
+  projects: [
+    {
+      name: "authenticated",
+      use: { 
+        ...devices["Desktop Chrome"],
+        storageState: "auth.json", // Auto-use this state
+      },
+    },
+  ],
+});
+```
+
+---
+
+## File Upload & Download
+
+### Uploading Files
+
+**Concept**: Upload files programmatically without UI file picker
+
+```typescript
+test("Upload file", async ({ page }) => {
+  await page.goto("https://example.com/upload");
+  
+  // Set file for upload
+  await page.locator('input[type="file"]').setInputFiles("/path/to/file.txt");
+  
+  // Multiple files
+  await page.locator('input[type="file"]').setInputFiles([
+    "/path/file1.txt",
+    "/path/file2.txt"
+  ]);
+  
+  // Trigger upload
+  await page.click("button[type='submit']");
+});
+```
+
+### Downloading Files
+
+```typescript
+test("Download file", async ({ page }) => {
+  const downloadPromise = page.waitForEvent("download");
+  
+  await page.click("a:has-text('Download')"); // Trigger download
+  
+  const download = await downloadPromise;
+  
+  // Save to specific location
+  await download.saveAs("/path/to/save/file.pdf");
+  
+  // Get download info
+  console.log(download.suggestedFilename());
+  console.log(download.url());
+});
+```
+
+---
+
+## Mouse & Keyboard Actions
+
+### Double Click
+
+```typescript
+test("Double click element", async ({ page }) => {
+  await page.locator("#item").dblClick();
+});
+```
+
+### Right Click (Context Menu)
+
+```typescript
+test("Right click element", async ({ page }) => {
+  await page.locator("#item").click({ button: "right" });
+  
+  // Click context menu option
+  await page.locator(".context-menu a").getByText("Delete").click();
+});
+```
+
+### Drag and Drop
+
+```typescript
+test("Drag and drop element", async ({ page }) => {
+  const source = page.locator("#draggable");
+  const target = page.locator("#drop-zone");
+  
+  await source.dragTo(target);
+});
+```
+
+### Keyboard Shortcuts
+
+```typescript
+test("Keyboard shortcuts", async ({ page }) => {
+  // Single key
+  await page.press("Enter");
+  await page.press("Escape");
+  await page.press("Delete");
+  
+  // Key combinations
+  await page.press("Control+a");     // Select all
+  await page.press("Control+c");     // Copy
+  await page.press("Control+v");     // Paste
+  await page.press("Shift+Tab");     // Shift + Tab
+  
+  // Type with modifier keys
+  await page.keyboard.type("Hello", { delay: 100 }); // Type slowly
+});
+```
+
+---
+
+## Table Operations & Complex Selectors
+
+### Reading Table Data
+
+```typescript
+test("Extract table data", async ({ page }) => {
+  await page.goto("https://example.com/users");
+  
+  // Get all rows
+  const rows = page.locator("table tbody tr");
+  const rowCount = await rows.count();
+  
+  for (let i = 0; i < rowCount; i++) {
+    const name = await rows.nth(i).locator("td:nth-child(1)").textContent();
+    const email = await rows.nth(i).locator("td:nth-child(2)").textContent();
+    const status = await rows.nth(i).locator("td:nth-child(3)").textContent();
+    
+    console.log(`${name} - ${email} - ${status}`);
+  }
+});
+```
+
+### Searching in Tables
+
+```typescript
+test("Find and click table row by content", async ({ page }) => {
+  const rows = page.locator("table tbody tr");
+  
+  let found = false;
+  const rowCount = await rows.count();
+  
+  for (let i = 0; i < rowCount; i++) {
+    const name = await rows.nth(i).locator("td").first().textContent();
+    
+    if (name?.trim() === "John Doe") {
+      // Click action button in this row
+      await rows.nth(i).locator("button").click();
+      found = true;
+      break;
+    }
+  }
+  
+  expect(found).toBeTruthy();
+});
+```
+
+### Using filter() for Cleaner Code
+
+```typescript
+test("Filter table rows more elegantly", async ({ page }) => {
+  // Find row containing specific text and click it
+  await page.locator("table tbody tr")
+    .filter({ hasText: "John Doe" })
+    .locator("button")
+    .click();
+});
+```
+
+---
+
+## Screenshots & Visual Testing
+
+### Taking Screenshots
+
+```typescript
+test("Take screenshot", async ({ page }) => {
+  await page.goto("https://example.com");
+  
+  // Full page screenshot
+  await page.screenshot({ path: "screenshot-full.png", fullPage: true });
+  
+  // Element screenshot
+  await page.locator("#header").screenshot({ path: "screenshot-element.png" });
+  
+  // With omit boxes (useful for timestamps, IDs that change)
+  await page.screenshot({
+    path: "screenshot.png",
+    mask: [page.locator("#dynamic-id"), page.locator("#timestamp")]
+  });
+});
+```
+
+### Visual Regression Testing
+
+```typescript
+test("Visual comparison", async ({ page }) => {
+  await page.goto("https://example.com");
+  
+  // Compare with baseline
+  expect(await page.screenshot()).toMatchSnapshot("homepage.png");
+  
+  // Update baseline if intentional changes made
+  // npx playwright test --update-snapshots
+});
+```
+
+---
+
+## Advanced Assertions
+
+### Custom Assertions
+
+```typescript
+test("Custom assertions", async ({ page }) => {
+  const element = page.locator("button");
+  
+  // Soft assertions (test continues even if fails)
+  expect.soft(element).toBeVisible();
+  expect.soft(element).toBeEnabled();
+  
+  // These won't stop the test, but will be reported
+  
+  // Hard assertions (test stops on failure) - default behavior
+  expect(element).toBeVisible();
+});
+```
+
+### Combining Multiple Assertions
+
+```typescript
+test("Multiple assertions", async ({ page }) => {
+  const input = page.locator("#email");
+  
+  await expect(input).toHaveAttribute("type", "email");
+  await expect(input).toHaveAttribute("required");
+  await expect(input).toHaveAttribute("placeholder", "Enter email");
+});
+```
+
+### Timeout for Specific Assertions
+
+```typescript
+test("Custom assertion timeout", async ({ page }) => {
+  // Wait up to 10 seconds for this element
+  await expect(page.locator("#delayed-element")).toBeVisible({
+    timeout: 10000
+  });
+});
+```
+
+---
+
+## Environment & Configuration
+
+### Using Environment Variables
+
+```typescript
+// playwright.config.ts
+export default defineConfig({
+  use: {
+    baseURL: process.env.BASE_URL || "https://staging.example.com",
+    trace: process.env.DEBUG ? "on" : "off",
+  },
+});
+
+// In test file
+test("use environment variables", async ({ page }) => {
+  // baseURL is used automatically
+  await page.goto("/dashboard");
+  
+  const apiToken = process.env.API_TOKEN;
+  // Use token for API calls
+});
+```
+
+### Running Tests with Environment Variables
+
+```bash
+# Command line
+BASE_URL=https://production.example.com npx playwright test
+
+# Or create .env file and use dotenv
+npm install dotenv
+```
+
+---
+
+## Retry Logic & Flakiness Management
+
+### Built-in Retries
+
+**Concept**: Automatically retry failed tests to handle flaky tests
+
+```typescript
+// playwright.config.ts
+export default defineConfig({
+  retries: process.env.CI ? 3 : 0, // Retry 3 times in CI, 0 locally
+});
+```
+
+### Fixing Flaky Tests with Retry Option
+
+**Best Practice**: Use retries in config for flaky tests, but fix root cause
+
+```typescript
+// playwright.config.ts
+export default defineConfig({
+  retries: 2,
+  timeout: 30 * 1000,
+});
+
+// Key Points:
+// - Each retry re-runs entire test from scratch
+// - Good for: timing issues, network delays
+// - Not good for: persistent bugs that need fixing
+// - Use retries as last resort, not primary solution
+```
+
+### Conditional Retries per Test
+
+```typescript
+// Retry only specific flaky tests
+test.describe("Flaky tests", () => {
+  test.describe.configure({ retries: 3 }); // Retry only these tests
+  
+  test("sometimes fails test", async ({ page }) => {
+    // Will retry up to 3 times if fails
+  });
+});
+
+test.describe("Reliable tests", () => {
+  test.describe.configure({ retries: 0 }); // No retries
+  
+  test("always stable test", async ({ page }) => {
+    // Won't retry even if global retries set
+  });
+});
+```
+
+### Mark Tests with fixme() and skip()
+
+```typescript
+test("mark test to skip", async ({ page }) => {
+  test.skip(true, "Not implemented yet");
+  // Test code won't run
+});
+
+test("mark test as fixme", async ({ page }) => {
+  test.fixme(true, "Known issue - waiting for backend fix");
+  // Test runs but failure is expected
+});
+
+// Conditionally skip/fixme
+test("skip on Windows", async ({ page }) => {
+  test.skip(process.platform === "win32", "Doesn't work on Windows");
+});
+```
+
+### Debugging Flaky Tests
+
+```typescript
+test("capture trace for flaky test", async ({ page }) => {
+  await page.context().tracing.start({ screenshots: true });
+  
+  // Test code
+  
+  // Only save trace on failure
+  if (test.info().status !== "passed") {
+    await page.context().tracing.stop({ 
+      path: `trace-${test.info().title}.zip` 
+    });
+  }
+});
+```
+
+---
+
+## Serial vs Parallel Execution
+
+### Understanding Parallel Execution (Default)
+
+**Concept**: Multiple tests run simultaneously in separate worker processes
+
+```typescript
+// playwright.config.ts
+export default defineConfig({
+  workers: 4, // 4 tests run in parallel
+  
+  // In CI:
+  workers: process.env.CI ? 1 : undefined, // Single worker for stability
+});
+
+// Running tests
+npx playwright test                    // Uses all workers
+npx playwright test --workers=2        // Override to 2 workers
+npx playwright test --workers=1        // Force serial (1 worker)
+```
+
+### When to Use Parallel Execution
+
+✅ **Use Parallel When:**
+- Tests are independent (no shared state)
+- Each test sets up its own data
+- Tests use different test accounts
+- Large test suite (saves time)
+
+```typescript
+test("independent test 1", async ({ page }) => {
+  await page.goto("https://example.com");
+  // Complete setup & assertions
+});
+
+test("independent test 2", async ({ page }) => {
+  await page.goto("https://example.com");
+  // Complete setup & assertions
+});
+```
+
+### Understanding Serial Execution (Sequential)
+
+**Concept**: Tests run one after another, waiting for each to complete
+
+```typescript
+// Run all tests sequentially
+npx playwright test --workers=1
+
+// OR in config:
+export default defineConfig({
+  workers: 1, // Force serial execution
+});
+```
+
+### When to Use Serial Execution
+
+⚠️ **Use Serial When:**
+- Tests depend on each other
+- Shared database/resource cleanup needed
+- Race conditions with parallel execution
+- Tests modify global state
+
+```typescript
+test.describe.configure({ mode: "serial" }); // Serial for this describe block
+
+test("Step 1: Create user", async ({ page }) => {
+  // Creates user in database
+});
+
+test("Step 2: Login user", async ({ page }) => {
+  // Logs in the user created in Step 1
+});
+
+test("Step 3: Delete user", async ({ page }) => {
+  // Deletes the user from Step 1
+});
+```
+
+### Running Tests Parallelly from Same File
+
+**Concept**: Run multiple instances of same test with different data
+
+```typescript
+// Default: tests in same file run in parallel
+test("test 1", async ({ page }) => {
+  await page.goto("https://example.com");
+  // Independent operations
+});
+
+test("test 2", async ({ page }) => {
+  await page.goto("https://example.com");
+  // Independent operations - runs PARALLEL with test 1
+});
+
+test("test 3", async ({ page }) => {
+  await page.goto("https://example.com");
+  // Independent operations - runs PARALLEL with test 1 & 2
+});
+
+// Command line control
+npx playwright test                    // Parallel (default)
+npx playwright test --workers=1        // Force serial
+npx playwright test --workers=4        // Increase parallelism
+```
+
+### External Control of Parallel Behavior
+
+```bash
+# Environment variable control
+PLAYWRIGHT_WORKERS=2 npx playwright test
+
+# Command line override
+npx playwright test --workers=1        # Override config
+npx playwright test --workers=4        # More parallel
+
+# Project-specific parallelism
+npx playwright test --project=chromium --workers=2
+```
+
+---
+
+## Race Conditions & Fixes
+
+### Understanding Race Conditions
+
+**Concept**: Multiple tests competing for same resource causing unpredictable failures
+
+```typescript
+// ❌ BAD - Race condition example
+test.describe("User Management", () => {
+  // Shared state - causes race condition
+  let userId;
+
+  test("create user", async ({ page }) => {
+    userId = await createUserInDB("john@test.com");
+  });
+
+  test("update user", async ({ page }) => {
+    // Runs in parallel - userId might not be set yet!
+    await updateUser(userId, { name: "Jane" });
+  });
+
+  test("delete user", async ({ page }) => {
+    // Also runs in parallel - userId might not be set yet!
+    await deleteUser(userId);
+  });
+});
+```
+
+### Fixing Race Conditions
+
+**Solution 1: Use Serial Mode**
+
+```typescript
+test.describe.configure({ mode: "serial" }); // Tests run sequentially
+
+test("step 1", async ({ page }) => {
+  // Wait for this to complete before step 2
+});
+
+test("step 2", async ({ page }) => {
+  // Now safe to use data from step 1
+});
+```
+
+**Solution 2: Isolate Each Test**
+
+```typescript
+// ✅ GOOD - Each test is independent
+test("create user", async ({ page }) => {
+  const userId = await createUserInDB("john@test.com");
+  await expect(userId).toBeTruthy();
+});
+
+test("update user", async ({ page }) => {
+  const userId = await createUserInDB("jane@test.com");
+  await updateUser(userId, { name: "Jane Doe" });
+  await expect(userUpdated).toBeTruthy();
+});
+
+test("delete user", async ({ page }) => {
+  const userId = await createUserInDB("bob@test.com");
+  await deleteUser(userId);
+  await expect(userDeleted).toBeTruthy();
+});
+```
+
+**Solution 3: Use beforeAll for Setup**
+
+```typescript
+let sharedUserId;
+
+test.describe("Shared Setup Tests", () => {
+  test.beforeAll(async () => {
+    // Runs ONCE before all tests in this describe
+    sharedUserId = await createUserInDB("shared@test.com");
+  });
+
+  test("test 1", async ({ page }) => {
+    // Can use sharedUserId - tests still parallel
+    await loginAsUser(sharedUserId);
+  });
+
+  test("test 2", async ({ page }) => {
+    // Can use sharedUserId
+    await updateUser(sharedUserId);
+  });
+
+  test.afterAll(async () => {
+    // Cleanup ONCE after all tests
+    await deleteUser(sharedUserId);
+  });
+});
+```
+
+### Common Race Condition Scenarios
+
+| Scenario | Problem | Solution |
+|----------|---------|----------|
+| Database record conflict | 2 tests try to create same user | Use unique data per test |
+| Shared test account | Multiple tests login to same account | Create separate accounts |
+| File system conflicts | 2 tests write to same file | Use unique filenames |
+| API rate limits | Parallel calls exceed limits | Reduce workers or add delays |
+| DOM race conditions | Elements appear/disappear unpredictably | Use proper waits & selectors |
+
+---
+
+## Tagging Tests & Controlling Execution
+
+### Adding Tags to Tests
+
+**Concept**: Mark tests with @tag for selective execution
+
+```typescript
+test("user can login @smoke @critical", async ({ page }) => {
+  // This test has 2 tags: @smoke and @critical
+  await page.fill("#email", "user@test.com");
+  await page.fill("#password", "password123");
+  await page.click("button");
+});
+
+test("user can logout @smoke", async ({ page }) => {
+  // This test has 1 tag: @smoke
+});
+
+test("user can update profile @profile", async ({ page }) => {
+  // This test has 1 tag: @profile
+});
+
+test("admin can delete users @admin", async ({ page }) => {
+  // This test has 1 tag: @admin (not tagged as @smoke)
+});
+```
+
+### Running Tests with Specific Tags
+
+```bash
+# Run only @smoke tests
+npx playwright test --grep @smoke
+
+# Run @critical tests only
+npx playwright test --grep @critical
+
+# Run tests with EITHER @smoke OR @critical
+npx playwright test --grep "@smoke|@critical"
+
+# Run all tests EXCEPT @admin
+npx playwright test --grep "^(?!.*@admin)"
+
+# Multiple conditions
+npx playwright test --grep "@smoke.*@critical"  # Both tags
+```
+
+### Tag Organization Strategies
+
+```typescript
+// By severity/priority
+test("feature works @critical", async ({ page }) => {});
+test("edge case handled @minor", async ({ page }) => {});
+
+// By category
+test("login flows @auth", async ({ page }) => {});
+test("payment processing @payment", async ({ page }) => {});
+
+// By environment
+test("works on staging @staging", async ({ page }) => {});
+test("production only @prod", async ({ page }) => {});
+
+// By owner/team
+test("team-backend feature @team-backend", async ({ page }) => {});
+test("team-frontend feature @team-frontend", async ({ page }) => {});
+
+// Multiple tags
+test("complete flow @e2e @smoke @critical", async ({ page }) => {});
+```
+
+### Tag-Based CI/CD Execution
+
+```bash
+# Local development - quick smoke tests
+npx playwright test --grep @smoke
+
+# Pre-deployment - all critical tests
+npx playwright test --grep @critical
+
+# Production - only @prod tests
+npx playwright test --grep @prod
+
+# Nightly run - everything except @skip
+npx playwright test --grep "^(?!.*@skip)"
+
+# Team-specific tests
+npx playwright test --grep @team-backend
+```
+
+### Using Tags in Config & CI
+
+```yaml
+# .github/workflows/playwright.yml
+name: Test Suite
+
+on: [push]
+
+jobs:
+  smoke-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - run: npm ci
+      - run: npx playwright install --with-deps
+      - run: npx playwright test --grep @smoke
+
+  full-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - run: npm ci
+      - run: npx playwright install --with-deps
+      - run: npx playwright test  # All tests
+```
+
+### Combining Tags with Serial/Parallel
+
+```typescript
+test.describe("Checkout Flow - @payment", () => {
+  test.describe.configure({ mode: "serial" }); // Run sequentially
+  
+  test("add item to cart @smoke @payment", async ({ page }) => {});
+  test("proceed to checkout @payment", async ({ page }) => {});
+  test("complete payment @critical @payment", async ({ page }) => {});
+  test("verify order created @payment", async ({ page }) => {});
+});
+
+test.describe("User Profile - @profile", () => {
+  // These run in parallel (default)
+  test("edit profile @profile", async ({ page }) => {});
+  test("change password @profile @critical", async ({ page }) => {});
+  test("upload avatar @profile", async ({ page }) => {});
+});
+
+// Run commands
+npx playwright test --grep @payment --workers=1     // Sequential payment tests
+npx playwright test --grep "@profile|@auth"         // Parallel profile & auth tests
+```
+
+---
+
+## Test Data Management
+
+### Using Fixtures for Data
+
+```typescript
+// fixtures.ts
+export const test = base.extend({
+  testData: {
+    user: {
+      email: "test@example.com",
+      password: "SecurePassword123",
+      name: "Test User",
+    },
+    products: [
+      { id: 1, name: "Product A", price: 99.99 },
+      { id: 2, name: "Product B", price: 149.99 },
+    ],
+  },
+});
+
+// In test
+test("use fixture data", async ({ page, testData }) => {
+  await page.fill("#email", testData.user.email);
+  await page.fill("#password", testData.user.password);
+});
+```
+
+### Data-Driven Tests
+
+```typescript
+test.describe("User Registration", () => {
+  const users = [
+    { email: "user1@test.com", password: "Pass1234" },
+    { email: "user2@test.com", password: "Pass5678" },
+    { email: "user3@test.com", password: "Pass9012" },
+  ];
+
+  users.forEach(user => {
+    test(`register user ${user.email}`, async ({ page }) => {
+      await page.goto("/register");
+      await page.fill("#email", user.email);
+      await page.fill("#password", user.password);
+      await page.click("button");
+      
+      await expect(page).toHaveURL(/.*success/);
+    });
+  });
+});
+```
+
+---
+
+## Parallel Execution & Performance
+
+### Understanding Worker Processes
+
+```typescript
+// playwright.config.ts
+export default defineConfig({
+  workers: 4, // Run 4 tests simultaneously
+  
+  // OR in CI environment
+  workers: process.env.CI ? 1 : 4, // Single worker in CI for stability
+});
+```
+
+### Organizing Tests for Parallel Execution
+
+```typescript
+// Tests run in parallel, so avoid:
+// ❌ Shared state across tests
+// ❌ Tests modifying same database records
+// ❌ Tests that depend on execution order
+
+// ✅ DO: Isolate tests
+test.describe("Shopping", () => {
+  test.beforeEach(async ({ page }) => {
+    // Each test gets fresh setup
+    await page.goto("/");
+    await page.context().clearCookies();
+  });
+
+  test("add to cart", async ({ page }) => {
+    // Independent test
+  });
+
+  test("remove from cart", async ({ page }) => {
+    // Independent test
+  });
+});
+```
+
+---
+
+## CI/CD Integration
+
+### Running in GitHub Actions
+
+```yaml
+# .github/workflows/playwright.yml
+name: Playwright Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      
+      - run: npm ci
+      - run: npx playwright install --with-deps
+      
+      - run: npx playwright test
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+      
+      - uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+```
+
+### Running Specific Tests in CI
+
+```bash
+# Run only smoke tests
+npx playwright test --grep @smoke
+
+# Run specific project
+npx playwright test --project=chromium
+
+# Run single file
+npx playwright test tests/login.spec.ts
+```
+
+---

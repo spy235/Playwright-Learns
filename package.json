@@ -12,6 +12,7 @@
     "@types/node": "^25.9.1"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "pdfkit": "^0.19.1"
   }
 }
