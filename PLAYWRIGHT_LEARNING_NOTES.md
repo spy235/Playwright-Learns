@@ -109,6 +109,130 @@ npx playwright show-report
 npx playwright test --headed
 ```
 
+## Allure Reporting
+
+### Why use Allure?
+- Generates rich HTML reports with attachments, steps, and history.
+- Works well with Playwright via the `allure-playwright` reporter.
+- Can include screenshots, videos, logs, and step metadata.
+
+### Install Allure dependencies
+```bash
+npm install -D allure-playwright allure-commandline
+```
+
+### Playwright config for Allure
+```typescript
+import { defineConfig, devices } from "@playwright/test";
+
+export default defineConfig({
+  reporter: [
+    ["html"],
+    ["allure-playwright"],
+  ],
+  use: {
+    headless: true,
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+  },
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
+    },
+  ],
+});
+```
+
+### Attach screenshot to Allure report
+```typescript
+import { test, expect } from "@playwright/test";
+import { allure } from "allure-playwright";
+
+test("Attach screenshot to Allure", async ({ page }) => {
+  await page.goto("https://example.com");
+  await expect(page.locator("h1")).toBeVisible();
+
+  const screenshot = await page.screenshot({ fullPage: true });
+  allure.attachment("Homepage screenshot", screenshot, "image/png");
+});
+```
+
+### Record and attach video to Allure
+- Enable video recording in config with `video: "on"` or `video: "retain-on-failure"`.
+- Use `page.video()?.path()` after closing the context to read the generated file.
+
+```typescript
+import { test, expect } from "@playwright/test";
+import { allure } from "allure-playwright";
+import fs from "fs";
+
+test("Attach video to Allure", async ({ browser }) => {
+  const context = await browser.newContext({ video: "on" });
+  const page = await context.newPage();
+
+  await page.goto("https://example.com");
+  await page.click("text=More information");
+
+  const video = page.video();
+  await context.close();
+
+  if (video) {
+    const videoPath = await video.path();
+    const videoBuffer = fs.readFileSync(videoPath);
+    allure.attachment("Test video", videoBuffer, "video/webm");
+  }
+});
+```
+
+### Additional Allure tips
+- Use `allure.attachment()` for any binary or text attachment.
+- Use `allure.step()` to add named steps when supported by the Allure plugin.
+- Keep `allure-results` in the default output folder, or configure via environment vars.
+
+### Generate and view Allure report
+```bash
+npx playwright test
+npx allure generate allure-results --clean -o allure-report
+npx allure open allure-report
+```
+
+### When to use manual attachments
+- Attach screenshots for non-failure checkpoints.
+- Attach video when you want a full session replay in the report.
+- Attach logs, API request/response payloads, and extra debug data.
+
+### Example: attach HTML source or text logs
+```typescript
+import { test, expect } from "@playwright/test";
+import { allure } from "allure-playwright";
+
+test("Attach page source and debug log", async ({ page }) => {
+  await page.goto("https://example.com");
+  const html = await page.content();
+  allure.attachment("Page source", html, "text/html");
+  allure.attachment("Debug log", "User clicked checkout", "text/plain");
+});
+```
+
+### Best practice
+- Use Playwright built-in `screenshot` and `video` options for automatic capture.
+- Add manual attachments only when you need custom naming or extra context.
+- Generate the final Allure report after test execution.
+
+### Notes
+- Allure reporting is separate from Playwright's built-in HTML reporter.
+- Install `allure-commandline` for `allure generate` and `allure open` commands.
+
 ### Modern Test Structure
 ```typescript
 import { test, expect } from "@playwright/test";
