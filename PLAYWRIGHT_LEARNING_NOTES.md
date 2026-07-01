@@ -82,6 +82,296 @@ export default defineConfig({
 });
 ```
 
+### Extra things you can do in playwright.config.ts
+
+The config file is not just for basic setup. It is also useful for handling different test scenarios and execution styles.
+
+- Different environments
+  - Use `baseURL` so tests can run against dev, QA, or production URLs without changing every test.
+  - Set environment-specific values with `process.env`.
+
+- Parallel execution
+  - `fullyParallel: true` runs tests in parallel when they are independent.
+  - `workers` controls how many browser workers run at once.
+  - Useful for speeding up large suites, especially in CI.
+
+- Project-level runs
+  - Use the `projects` array to run tests on multiple browsers or device profiles.
+  - You can also create custom project names like `smoke`, `regression`, or `mobile`.
+
+- CI vs local behavior
+  - Use `retries`, `forbidOnly`, `workers`, and `reporter` differently for local and CI runs.
+  - This helps avoid flaky tests and keeps local debugging simple.
+
+- Browser context settings
+  - Configure `viewport`, `ignoreHTTPSErrors`, `storageState`, `permissions`, and other browser options here.
+
+- Start app automatically
+  - Use `webServer` to launch your local app before running tests.
+  - This is helpful when the app needs a dev server.
+
+- Test filtering and organization
+  - Use `testMatch` / `testIgnore` to include or exclude files.
+  - Great for separating smoke tests from full regression suites.
+
+Example of a more advanced config:
+```typescript
+import { defineConfig, devices } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./tests",
+  fullyParallel: true,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 2 : 4,
+  reporter: [["list"], ["html", { open: "never" }]],
+
+  use: {
+    baseURL: process.env.BASE_URL ?? "https://example.com",
+    headless: !process.env.DEBUG,
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+    viewport: { width: 1280, height: 720 },
+  },
+
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "smoke",
+      testMatch: /smoke/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
+
+  webServer: {
+    command: "npm run dev",
+    url: "http://localhost:3000",
+    reuseExistingServer: !process.env.CI,
+  },
+});
+```
+
+### Playwright config features with separate examples
+
+Here are the most useful configuration options, each with its own example.
+
+#### `testDir`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./tests",
+});
+```
+
+#### `use.baseURL`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  use: {
+    baseURL: "https://qa.example.com",
+  },
+});
+```
+
+#### `projects`
+```typescript
+import { defineConfig, devices } from "@playwright/test";
+
+export default defineConfig({
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+  ],
+});
+```
+
+#### `fullyParallel`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  fullyParallel: true,
+});
+```
+
+#### `workers`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  workers: 4,
+});
+```
+
+#### `retries`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  retries: 2,
+});
+```
+
+#### `reporter`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  reporter: [["html"], ["list"]],
+});
+```
+
+#### `timeout`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  timeout: 60000,
+});
+```
+
+#### `expect.timeout`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  expect: {
+    timeout: 10000,
+  },
+});
+```
+
+#### `headless`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  use: {
+    headless: false,
+  },
+});
+```
+
+#### `trace`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  use: {
+    trace: "on-first-retry",
+  },
+});
+```
+
+#### `screenshot`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  use: {
+    screenshot: "only-on-failure",
+  },
+});
+```
+
+#### `video`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  use: {
+    video: "retain-on-failure",
+  },
+});
+```
+
+#### `storageState`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  use: {
+    storageState: "./auth.json",
+  },
+});
+```
+
+#### `globalSetup`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  globalSetup: "./global-setup.ts",
+});
+```
+
+#### `webServer`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  webServer: {
+    command: "npm run start",
+    url: "http://localhost:3000",
+    reuseExistingServer: true,
+  },
+});
+```
+
+#### `grep` / `grepInvert`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  grep: /@smoke/,
+  grepInvert: /@skip/,
+});
+```
+
+#### `forbidOnly`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  forbidOnly: !!process.env.CI,
+});
+```
+
+#### `maxFailures`
+```typescript
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  maxFailures: 5,
+});
+```
+
+### The Top 10 features to master
+
+If you have limited time, focus on these:
+
+1. **Projects** – Cross-browser and mobile testing.
+2. **Parallel execution** – `fullyParallel` and `workers`.
+3. **Base URL** – Manage different environments cleanly.
+4. **Retries** – Improve CI stability.
+5. **Reporters** – Generate useful test reports.
+6. **Trace, Video, Screenshots** – Debug failures efficiently.
+7. **Storage State** – Skip repeated logins.
+8. **Global Setup/Teardown** – Initialize and clean up test data.
+9. **Timeouts** – Control test and assertion durations.
+10. **Grep** – Run smoke, regression, or tagged test suites.
+
 ### Running Tests
 ```bash
 # Run all tests
